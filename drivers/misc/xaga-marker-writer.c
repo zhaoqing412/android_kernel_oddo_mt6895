@@ -3,8 +3,8 @@
  * xaga boot-stage marker writer (XAGR ring), built into the kernel.
  *
  * xaga (Redmi Note 11T Pro / POCO X4 GT / Redmi K50i, MT6895) boot trace.
- * Arms a 64KB "XAGR" header + circular text ring in the log_store reserved
- * DRAM region (0x7ffbf000) at the head of arm64 setup_arch - the earliest
+ * Arms a 64KB "XAGR" header + circular text ring in the aee_lk reserved
+ * DRAM region (0x50740000) at the head of arm64 setup_arch - the earliest
  * point the arm64 MMU fixmap makes the region writable - and mirrors every
  * printk() (via vprintk_emit) into the ring. Markers survive an AP watchdog
  * reboot in DRAM; the xaga-marker reader built into the lineage_xaga kernel
@@ -15,10 +15,13 @@
  *   u32 magic @0x0000, u32 cursor @0x0004, u32 total @0x0008,
  *   u32 stage @0x1000, text ring @0x2000 (0xE000 bytes).
  *
- * The ring lives in log_store (0x7ffbf000), NOT minirdump (0x48170000):
- * writing minirdump triggers MTK's mrdump machinery and reboots the device
- * immediately (device findings 2026-08-09). log_store is a non-secure
- * reserved area not managed by mrdump/aee.
+ * The ring lives in aee_lk (0x50700000, 8MB, ring at +4MB = 0x50740000),
+ * NOT log_store (0x7ffbf000): LK's PL_LOG_STORE rewrites the log_store
+ * header on every boot (ram_header->sig 0xABCD1234), wiping the ring before
+ * the reader can see it. minirdump (0x48170000) triggers mrdump and reboots,
+ * and ramoops owns pstore (0x48090000) - device findings 2026-08-09/10.
+ * aee_lk is a non-secure reserved area untouched on a normal boot; +4MB
+ * clears any LK aee header writes.
  *
  * Built-in (it was a module until the vendor-ramdisk module never wrote -
  * never confirmed loaded): CONFIG_XAGA_MARKER_WRITER is set only by the xaga
@@ -34,8 +37,9 @@
 #include <linux/printk.h>
 #include <linux/xaga_marker.h>
 
-/* log_store reserved region: non-secure, survives the WDT reboot in DRAM */
-#define XAGA_MRDUMP_PA	0x7ffbf000UL
+/* aee_lk reserved region: non-secure, survives the WDT reboot in DRAM.
+ * Ring at aee_lk + 4MB (0x50740000) to clear LK aee header writes. */
+#define XAGA_MRDUMP_PA	0x50740000UL
 #define XAGA_MRDUMP_SZ	0x10000UL
 #define XAGA_RING_OFF	0x2000U
 #define XAGA_RING_SZ	0xE000U
