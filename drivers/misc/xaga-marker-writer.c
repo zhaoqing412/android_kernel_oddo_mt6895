@@ -90,7 +90,11 @@ EXPORT_SYMBOL_GPL(xaga_marker_stage);
 /* Mirrors every printk() into the ring while armed; called from
  * vprintk_emit. Must be safe in any printk context: no printk, no locks, no
  * allocation. The ring is lock-free: concurrent writers may occasionally
- * interleave, acceptable for a diagnostic ring. */
+ * interleave, acceptable for a diagnostic ring. Every 64th message also
+ * writes a MIRROR:n heartbeat so the LK log_store recovery (which dumps
+ * this region into expdb on the next boot) proves the mirror is live. */
+static unsigned int xaga_mirror_cnt;
+
 void xaga_marker_early_printk(const char *fmt, va_list args)
 {
 	va_list ap;
@@ -105,6 +109,12 @@ void xaga_marker_early_printk(const char *fmt, va_list args)
 	if (n <= 0)
 		return;
 	xaga_marker_ring_write(buf, n);
+	if (++xaga_mirror_cnt % 64 == 0) {
+		char hb[32];
+		int hn = snprintf(hb, sizeof(hb), "MIRROR:%u\n", xaga_mirror_cnt);
+
+		xaga_marker_ring_write(hb, hn);
+	}
 }
 
 /* Called from the head of arm64 setup_arch, right after
