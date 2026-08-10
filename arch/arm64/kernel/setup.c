@@ -32,6 +32,7 @@
 #include <linux/sched/task.h>
 #include <linux/scs.h>
 #include <linux/mm.h>
+#include <linux/xaga_marker.h>
 
 #include <asm/acpi.h>
 #include <asm/fixmap.h>
@@ -289,6 +290,10 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 
 	early_fixmap_init();
 	early_ioremap_init();
+
+	/* Earliest point the fixmap maps the xaga log_store ring (0x7ffbf000);
+	 * from here on every printk() is mirrored into it. */
+	xaga_marker_early_init();
 
 	setup_machine_fdt(__fdt_pointer);
 
