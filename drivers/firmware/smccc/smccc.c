@@ -26,17 +26,25 @@ void __init arm_smccc_version_init(u32 version, enum arm_smccc_conduit conduit)
 	smccc_version = version;
 	smccc_conduit = conduit;
 
-	smccc_trng_available = smccc_probe_trng();
+	/* xaga's 5.10-era ATF predates the SMCCC TRNG (0x84000050) and
+	 * SOC_ID (0x80000001/0x80000002) fastcalls; probing them hangs the
+	 * secure world (unknown SMC -> watchdog reboot) so the kernel never
+	 * got past setup_arch. Skip the probes on xaga builds; the 5.10 xaga
+	 * kernels never issued these calls. smccc_trng_available stays false,
+	 * which also keeps runtime SMCCC TRNG reads from firing. */
+	if (!IS_ENABLED(CONFIG_TARGET_PRODUCT_XAGA)) {
+		smccc_trng_available = smccc_probe_trng();
 
-	if ((smccc_version >= ARM_SMCCC_VERSION_1_2) &&
-	    (smccc_conduit != SMCCC_CONDUIT_NONE)) {
-		arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
-				     ARM_SMCCC_ARCH_SOC_ID, &res);
-		if ((s32)res.a0 >= 0) {
-			arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_SOC_ID, 0, &res);
-			smccc_soc_id_version = (s32)res.a0;
-			arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_SOC_ID, 1, &res);
-			smccc_soc_id_revision = (s32)res.a0;
+		if ((smccc_version >= ARM_SMCCC_VERSION_1_2) &&
+		    (smccc_conduit != SMCCC_CONDUIT_NONE)) {
+			arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
+					     ARM_SMCCC_ARCH_SOC_ID, &res);
+			if ((s32)res.a0 >= 0) {
+				arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_SOC_ID, 0, &res);
+				smccc_soc_id_version = (s32)res.a0;
+				arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_SOC_ID, 1, &res);
+				smccc_soc_id_revision = (s32)res.a0;
+			}
 		}
 	}
 }
