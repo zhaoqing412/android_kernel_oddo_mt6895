@@ -4979,7 +4979,15 @@ EXPORT_SYMBOL_GPL(kmsg_dump_get_buffer);
  */
 void kmsg_dump_rewind(struct kmsg_dump_iter *iter)
 {
-	iter->cur_seq = latched_seq_read_nolock(&clear_seq);
+	/*
+	 * Start from the oldest record still in the ring, NOT from
+	 * clear_seq. clear_seq is a userspace syslog() cursor that Android
+	 * logd/dmesg -c advances on every boot, which would make
+	 * kmsg_dump_get_buffer() return nothing at oops/panic time and
+	 * silently drop the very log we are trying to capture (xaga 6.12
+	 * bring-up: "kmsg dump empty (Oops)" on the oops partition).
+	 */
+	iter->cur_seq = prb_first_valid_seq(prb);
 	iter->next_seq = prb_next_seq(prb);
 }
 EXPORT_SYMBOL_GPL(kmsg_dump_rewind);
