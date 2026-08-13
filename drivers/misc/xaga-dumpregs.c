@@ -189,6 +189,8 @@ static void xaga_dr_dump_regs(char *buf, size_t size)
 struct dr_bio_done {
 	struct completion done;
 	int err;
+	blk_status_t status;	/* raw bio->bi_status for diagnostics */
+	unsigned int bytes;	/* bytes this bio carried */
 };
 
 #define DR_POLL_MAX	(100000000)
@@ -197,6 +199,7 @@ static void dr_bio_endio(struct bio *bio)
 {
 	struct dr_bio_done *bd = bio->bi_private;
 
+	bd->status = bio->bi_status;
 	bd->err = blk_status_to_errno(bio->bi_status);
 	complete(&bd->done);
 	bio_put(bio);
@@ -217,45 +220,64 @@ static int dr_poll_done(struct dr_bio_done *bd)
 static int dr_blk_write(loff_t pos, const void *buf, size_t len)
 {
 	struct dr_bio_done bd;
-	struct bio *bio = NULL;
 	size_t written = 0;
 	int ret = 0;
 
 	while (written < len) {
-		struct page *page = virt_to_page(buf + written);
-		unsigned int off = offset_in_page(buf + written);
-		size_t chunk = min(len - written, (size_t)(PAGE_SIZE - off));
+		struct page *page;
+		unsigned int off;
+		size_t chunk;
+		struct bio *bio;
 
+		/* buf must live in the linear map (kzalloc) so virt_to_page()
+		 * yields the real struct page. A static/rodata buffer sits in
+		 * the kernel image mapping (KIMAGE_VADDR, not linear) and
+		 * virt_to_page() then returns a bogus page, which the block
+		 * layer reports as -EIO (seen: "kmsg write failed: -5" with a
+		 * static 4KB buffer, while the kzalloc'd dr_buf always worked).
+		 */
+		if (!virt_addr_valid(buf + written)) {
+			ret = -EFAULT;
+			break;
+		}
+		page = virt_to_page(buf + written);
+		off = offset_in_page(buf + written);
+
+		/* One page (<= 4096B) per bio, submitted and polled to
+		 * completion one at a time. Multi-page bios failed with
+		 * BLK_STS_IOERR at oops time (UFS completion is fragile
+		 * under die()) while the single-page register dump always
+		 * succeeded, so keep every request small and synchronous. */
+		chunk = min(len - written, (size_t)(PAGE_SIZE - off));
+
+		init_completion(&bd.done);
+		bd.err = 0;
+		bd.bytes = 0;
+		bio = bio_alloc(dr_bdev, 1, REQ_OP_WRITE,
+				GFP_ATOMIC | __GFP_NOWARN);
 		if (!bio) {
-			init_completion(&bd.done);
-			bd.err = 0;
-			bio = bio_alloc(dr_bdev, 16, REQ_OP_WRITE,
-					GFP_ATOMIC | __GFP_NOWARN);
-			if (!bio) {
-				ret = -ENOMEM;
-				break;
-			}
-			bio->bi_iter.bi_sector = (pos + written) >> SECTOR_SHIFT;
-			bio->bi_private = &bd;
-			bio->bi_end_io = dr_bio_endio;
+			ret = -ENOMEM;
+			break;
 		}
+		bio->bi_iter.bi_sector = (pos + written) >> SECTOR_SHIFT;
+		bio->bi_private = &bd;
+		bio->bi_end_io = dr_bio_endio;
 		if (bio_add_page(bio, page, chunk, off) != chunk) {
-			submit_bio(bio);
-			bio = NULL;
-			ret = dr_poll_done(&bd);
-			if (!ret && bd.err)
-				ret = bd.err;
-			if (ret)
-				break;
-			continue;
+			bio_put(bio);
+			ret = -EIO;
+			break;
 		}
-		written += chunk;
-	}
-	if (bio) {
 		submit_bio(bio);
 		ret = dr_poll_done(&bd);
 		if (!ret && bd.err)
 			ret = bd.err;
+		if (ret) {
+			pr_err("xaga-dumpregs: blk write fail: ret=%d status=0x%x bytes=%u pos=%lld off=%u chunk=%zu\n",
+			       ret, bd.status, bd.bytes,
+			       (long long)(pos + written), off, chunk);
+			break;
+		}
+		written += chunk;
 	}
 	return ret;
 }
@@ -284,7 +306,8 @@ static void xaga_dr_print_regs(const char *text, size_t len)
  * panic path) - this is exactly the "last_kmsg" we otherwise cannot get.
  * The die notifier's register text (xaga-dr[...]) is already in the log
  * ring by then, so it ends up in the dmesg copy as well. */
-#define DR_KMSG_MAX	(1024 * 1024)	/* 1 MiB cap: oops partition is 16MB */
+#define DR_KMSG_MAX	(512 * 1024)	/* 512 KiB cap: keeps the IRQ-enabled
+					 * write window short; oops partition is 16MB */
 
 struct xaga_dr_header {
 	__le32 magic;
@@ -298,26 +321,33 @@ struct xaga_dr_header {
 
 static struct kmsg_dumper dr_kmsg_dumper;
 static atomic_t dr_kmsg_done = ATOMIC_INIT(0);
-static char dr_kmsg_buf[4096];
 
 static void dr_dump_kmsg(struct kmsg_dumper *dumper,
 			 struct kmsg_dump_detail *detail)
 {
 	struct kmsg_dump_iter iter;
-	loff_t pos = XAGA_DR_HEADER;
+	loff_t pos = 0;
 	size_t len;
 	u32 total = 0;
 	int ret;
 
-	if (!dr_bdev || atomic_xchg(&dr_kmsg_done, 1))
+	if (!dr_bdev || !dr_buf || atomic_xchg(&dr_kmsg_done, 1))
 		return;
 
+	/* Log text goes into the kzalloc'd dr_buf (linear map, safe for
+	 * virt_to_page() in dr_blk_write). Write 4096B-aligned bios only:
+	 * UFS on this platform rejects non-4KB-aligned requests (whole
+	 * 4096B pages succeeded, the trailing 3584B page failed with
+	 * BLK_STS_IOERR), so every get_buffer chunk is rounded up to a full
+	 * page. The 64B XGAD header then overwrites the first 4096B. */
 	kmsg_dump_rewind(&iter);
-	while (kmsg_dump_get_buffer(&iter, true, dr_kmsg_buf,
-				    sizeof(dr_kmsg_buf), &len)) {
+	while (kmsg_dump_get_buffer(&iter, true, dr_buf,
+				    ALIGN(XAGA_DR_MAX - SECTOR_SIZE, 4096),
+				    &len)) {
 		if (len > DR_KMSG_MAX - total)
 			len = DR_KMSG_MAX - total;
-		ret = dr_blk_write(pos, dr_kmsg_buf, len);
+		len = round_up(len, 4096);
+		ret = dr_blk_write(pos, dr_buf, len);
 		if (ret) {
 			pr_err("xaga-dumpregs: kmsg write failed: %d (pos=%lld total=%u)\n",
 			       ret, (long long)pos, total);
@@ -329,10 +359,11 @@ static void dr_dump_kmsg(struct kmsg_dumper *dumper,
 			break;
 	}
 
-	/* 64B XGAD header at offset 0 (overwritten last; magic + len + why) */
+	/* 64B XGAD header at offset 0, written as one full 4096B page
+	 * (aligned) and overwriting the first 4096B of the log text. */
 	if (total) {
 		struct xaga_dr_header *hdr =
-			(struct xaga_dr_header *)dr_kmsg_buf;
+			(struct xaga_dr_header *)dr_buf;
 
 		memset(hdr, 0, sizeof(*hdr));
 		hdr->magic = cpu_to_le32(XAGA_DR_MAGIC);
@@ -341,7 +372,7 @@ static void dr_dump_kmsg(struct kmsg_dumper *dumper,
 		hdr->len = cpu_to_le32(total);
 		hdr->ts_nsec = cpu_to_le64(ktime_get_real_fast_ns());
 		hdr->seq = cpu_to_le32(1);
-		dr_blk_write(0, dr_kmsg_buf, sizeof(*hdr));
+		dr_blk_write(0, dr_buf, 4096);
 		pr_info("xaga-dumpregs: saved %u bytes dmesg to oops partition (%s)\n",
 			total, kmsg_dump_reason_str(detail->reason));
 	} else {
@@ -413,8 +444,16 @@ static int xaga_dr_die(struct notifier_block *nb, unsigned long val, void *data)
 		/* Trigger the kmsg dumper here (early, before mrdump floods the
 		 * XAGR ring and before oops_exit() may be skipped) so its
 		 * "saved N bytes dmesg" line lands in the ring and the dmesg
-		 * write to the oops partition happens right at the oops. */
+		 * write to the oops partition happens right at the oops.
+		 *
+		 * die() holds die_lock with IRQs disabled, so UFS completion
+		 * IRQs cannot run and bio writes time out / fail with
+		 * BLK_STS_IOERR (seen: status=0xa). Re-enable IRQs around the
+		 * write - acceptable in oops context (no other path takes
+		 * die_lock from IRQ context). */
+		local_irq_enable();
 		kmsg_dump_desc(KMSG_DUMP_OOPS, "xaga-dumpregs");
+		local_irq_disable();
 	}
 	return NOTIFY_OK;
 }
