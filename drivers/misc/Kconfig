@@ -661,4 +661,19 @@ config XAGA_MARKER_WRITER
 
 	  Only the xaga defconfig fragment enables this; leave it off for
 	  other devices.
+
+config XAGA_DUMPREGS
+	bool "xaga display register dump to oops partition on oops/panic"
+	depends on ARM64
+	help
+	  xaga (Redmi Note 11T Pro / POCO X4 GT / Redmi K50i, MT6895) display
+	  bring-up aid: on kernel oops/panic, dump the display engine registers
+	  (OVL, RDMA, PQ chain, DSC, DSI, MUTEX, MIPI TX PLL, MMSYS crossbar,
+	  RSZ0) as text into the "oops" partition (/dev/block/sdc81) using
+	  panic-safe polling bios, so the display state at the crash moment
+	  survives the reboot and can be read back with
+	  `dd if=/dev/block/sdc81 bs=64 skip=1`.
+
+	  Only the xaga defconfig fragment enables this; leave it off for
+	  other devices.
 endmenu
