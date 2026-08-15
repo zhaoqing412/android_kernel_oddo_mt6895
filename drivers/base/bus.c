@@ -527,11 +527,6 @@ void bus_probe_device(struct device *dev)
 	struct subsys_private *sp = bus_to_subsys(dev->bus);
 	struct subsys_interface *sif;
 
-	/* xaga probe: gce bus_probe_device trigger (2026-08-12) */
-	if (dev->of_node && strstr(dev_name(dev), "1e980000.gce"))
-		pr_info("xaga-probe: bus_probe_device %s autoprobe=%d\n",
-			dev_name(dev), sp ? sp->drivers_autoprobe : -1);
-
 	if (!sp)
 		return;
 

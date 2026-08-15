@@ -131,10 +131,6 @@ static DECLARE_WORK(deferred_probe_work, deferred_probe_work_func);
 
 void driver_deferred_probe_add(struct device *dev)
 {
-	/* xaga probe: gce added to deferred queue (2026-08-12) */
-	if (dev->of_node && strstr(dev_name(dev), "1e980000.gce"))
-		pr_info("xaga-probe: deferred_add %s can_match=%d\n",
-			dev_name(dev), dev->can_match);
 	if (!dev->can_match)
 		return;
 
@@ -621,11 +617,6 @@ static int really_probe(struct device *dev, const struct device_driver *drv)
 	}
 
 	link_ret = device_links_check_suppliers(dev);
-	/* xaga probe: track really_probe steps (2026-08-12) */
-	if (dev->of_node && (strstr(dev_name(dev), "dispsys_config") ||
-			     strstr(dev_name(dev), "1e980000.gce")))
-		pr_info("xaga-probe: really_probe %s drv=%s links_ret=%d\n",
-			dev_name(dev), drv->name ? drv->name : "?", link_ret);
 	if (link_ret == -EPROBE_DEFER)
 		return link_ret;
 
@@ -643,19 +634,11 @@ re_probe:
 
 	/* If using pinctrl, bind pins now before probing */
 	ret = pinctrl_bind_pins(dev);
-	/* xaga probe: pinctrl step for dispsys_config/gce (2026-08-12) */
-	if (dev->of_node && (strstr(dev_name(dev), "dispsys_config") ||
-			     strstr(dev_name(dev), "1e980000.gce")))
-		pr_info("xaga-probe: pinctrl_bind_pins ret=%d\n", ret);
 	if (ret)
 		goto pinctrl_bind_failed;
 
 	if (dev->bus->dma_configure) {
 		ret = dev->bus->dma_configure(dev);
-		/* xaga probe: dma_configure step (2026-08-12) */
-		if (dev->of_node && (strstr(dev_name(dev), "dispsys_config") ||
-				     strstr(dev_name(dev), "1e980000.gce")))
-			pr_info("xaga-probe: dma_configure ret=%d\n", ret);
 		if (ret)
 			goto pinctrl_bind_failed;
 	}
@@ -668,19 +651,11 @@ re_probe:
 
 	if (dev->pm_domain && dev->pm_domain->activate) {
 		ret = dev->pm_domain->activate(dev);
-		/* xaga probe: pm_domain activate step (2026-08-12) */
-		if (dev->of_node && (strstr(dev_name(dev), "dispsys_config") ||
-				     strstr(dev_name(dev), "1e980000.gce")))
-			pr_info("xaga-probe: pm_domain activate ret=%d\n", ret);
 		if (ret)
 			goto probe_failed;
 	}
 
 	ret = call_driver_probe(dev, drv);
-	/* xaga probe: result of actually invoking the driver probe (2026-08-12) */
-	if (dev->of_node && strstr(dev_name(dev), "dispsys_config"))
-		pr_info("xaga-probe: call_driver_probe %s drv=%s ret=%d\n",
-			dev_name(dev), drv->name ? drv->name : "?", ret);
 	if (ret) {
 		/*
 		 * If fw_devlink_best_effort is active (denoted by -EAGAIN), the
@@ -851,11 +826,6 @@ static int driver_probe_device(const struct device_driver *drv, struct device *d
 	int trigger_count = atomic_read(&deferred_trigger_count);
 	int ret;
 
-	/* xaga probe: gce entering driver_probe_device (2026-08-12) */
-	if (dev->of_node && strstr(dev_name(dev), "1e980000.gce"))
-		pr_info("xaga-probe: driver_probe_device %s drv=%s\n",
-			dev_name(dev), drv->name ? drv->name : "?");
-
 	atomic_inc(&probe_count);
 	ret = __driver_probe_device(drv, dev);
 	if (ret == -EPROBE_DEFER || ret == EPROBE_DEFER) {
@@ -956,11 +926,6 @@ static int __device_attach_driver(struct device_driver *drv, void *_data)
 	int ret;
 
 	ret = driver_match_device(drv, dev);
-	/* xaga probe: see if dispsys_config/gce ever matches a driver (2026-08-12) */
-	if (dev->of_node && (strstr(dev_name(dev), "dispsys_config") ||
-			     strstr(dev_name(dev), "1e980000.gce")))
-		pr_info("xaga-probe: driver_attach %s drv=%s ret=%d\n",
-			dev_name(dev), drv->name ? drv->name : "?", ret);
 	if (ret == 0) {
 		/* no match */
 		return 0;
@@ -1036,11 +1001,6 @@ static int __device_attach(struct device *dev, bool allow_async)
 {
 	int ret = 0;
 	bool async = false;
-
-	/* xaga probe: is gce ever processed by device_attach (2026-08-12) */
-	if (dev->of_node && strstr(dev_name(dev), "1e980000.gce"))
-		pr_info("xaga-probe: __device_attach %s dead=%d driver=%d\n",
-			dev_name(dev), dev->p->dead, !!dev->driver);
 
 	device_lock(dev);
 	if (dev->p->dead) {
@@ -1210,10 +1170,6 @@ static int __driver_attach(struct device *dev, void *data)
 	 */
 
 	ret = driver_match_device(drv, dev);
-	/* xaga probe: __driver_attach (driver-register scan) for gce (2026-08-12) */
-	if (dev->of_node && strstr(dev_name(dev), "1e980000.gce"))
-		pr_info("xaga-probe: drv_attach_scan %s drv=%s ret=%d\n",
-			dev_name(dev), drv->name ? drv->name : "?", ret);
 	if (ret == 0) {
 		/* no match */
 		return 0;

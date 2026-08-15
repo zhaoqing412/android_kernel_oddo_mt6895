@@ -1060,18 +1060,7 @@ int device_links_check_suppliers(struct device *dev)
 	 */
 	scoped_guard(mutex, &fwnode_link_lock) {
 		sup_fw = fwnode_links_check_suppliers(dev->fwnode);
-		/* xaga probe: fwnode supplier blocking dispsys_config (2026-08-12) */
-		if (dev->of_node && (strstr(dev_name(dev), "dispsys_config") ||
-				     strstr(dev_name(dev), "1e980000.gce")))
-			pr_info("xaga-probe: fwnode_links %s sup_fw=%p %s best_effort=%d\n",
-				dev_name(dev), sup_fw,
-				sup_fw ? fwnode_get_name(sup_fw) : "none",
-				dev_is_best_effort(dev));
 		if (sup_fw) {
-			/* xaga probe: fwnode branch returning defer (2026-08-12) */
-			if (dev->of_node && strstr(dev_name(dev), "1e980000.gce"))
-				pr_info("xaga-probe: fwnode DEFER %s sup=%pfwf\n",
-					dev_name(dev), sup_fw);
 			if (dev_is_best_effort(dev))
 				fwnode_ret = -EAGAIN;
 			else
@@ -1083,21 +1072,8 @@ int device_links_check_suppliers(struct device *dev)
 	device_links_write_lock();
 
 	list_for_each_entry(link, &dev->links.suppliers, c_node) {
-		/* xaga probe: ALL suppliers incl non-managed for gce (2026-08-12) */
-		if (dev->of_node && strstr(dev_name(dev), "1e980000.gce"))
-			pr_info("xaga-probe: supplier %s status=%d flags=0x%x managed=%d\n",
-				dev_name(link->supplier), link->status,
-				link->flags, !!(link->flags & DL_FLAG_MANAGED));
-
 		if (!(link->flags & DL_FLAG_MANAGED))
 			continue;
-
-		/* xaga probe: which supplier blocks dispsys_config (2026-08-12) */
-		if (dev->of_node && (strstr(dev_name(dev), "dispsys_config") ||
-				     strstr(dev_name(dev), "1e980000.gce")))
-			pr_info("xaga-probe: supplier %s status=%d flags=0x%x\n",
-				dev_name(link->supplier), link->status,
-				link->flags);
 
 		if (link->status != DL_STATE_AVAILABLE &&
 		    !(link->flags & DL_FLAG_SYNC_STATE_ONLY)) {
@@ -1109,11 +1085,6 @@ int device_links_check_suppliers(struct device *dev)
 				continue;
 			}
 
-			/* xaga probe: device_link deferring gce (2026-08-12) */
-			if (dev->of_node && strstr(dev_name(dev), "1e980000.gce"))
-				pr_info("xaga-probe: link_DEFER %s sup=%s status=%d\n",
-					dev_name(dev), dev_name(link->supplier),
-					link->status);
 			device_links_missing_supplier(dev);
 			ret = dev_err_probe(dev, -EPROBE_DEFER,
 					    "supplier %s not ready\n", dev_name(link->supplier));

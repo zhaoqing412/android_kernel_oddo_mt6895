@@ -81,7 +81,11 @@
  */
 #define QUEUE_SIZE		16
 #define WRITE_BUF_SIZE		8192		/* TX only */
-#define GS_CONSOLE_BUF_SIZE	8192
+/* xaga: 1 MiB console fifo. The stock 8KiB fifo overflows during early
+ * boot (up to ~950KiB of printk before USB enumerates) and the overflow is
+ * reported as "[missed N bytes]" on the serial console, losing the display
+ * bring-up trace (2026-08-14). 1 MiB holds the whole early boot log. */
+#define GS_CONSOLE_BUF_SIZE	(1024 * 1024)
 
 /* Prevents race conditions while accessing gser->ioport */
 static DEFINE_SPINLOCK(serial_port_lock);

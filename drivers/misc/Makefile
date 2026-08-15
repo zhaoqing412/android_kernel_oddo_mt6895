@@ -75,4 +75,4 @@ obj-y				+= keba/
 obj-$(CONFIG_UID_SYS_STATS)	+= uid_sys_stats.o
 obj-$(CONFIG_PKVM_SMC_FILTER)  += pkvm-smc/
 obj-$(CONFIG_XAGA_MARKER_WRITER) += xaga-marker-writer.o
-obj-$(CONFIG_XAGA_DUMPREGS) += xaga-dumpregs.o
+obj-$(CONFIG_XAGA_KMSG2USB) += xaga-kmsg2usb.o

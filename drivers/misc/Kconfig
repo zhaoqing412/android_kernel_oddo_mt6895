@@ -662,18 +662,20 @@ config XAGA_MARKER_WRITER
 	  Only the xaga defconfig fragment enables this; leave it off for
 	  other devices.
 
-config XAGA_DUMPREGS
-	bool "xaga display register dump to oops partition on oops/panic"
-	depends on ARM64
+config XAGA_KMSG2USB
+	bool "xaga g_serial gate on oops-partition kmsg2usb marker"
+	depends on ARM64 && USB_G_SERIAL && U_SERIAL_CONSOLE
 	help
-	  xaga (Redmi Note 11T Pro / POCO X4 GT / Redmi K50i, MT6895) display
-	  bring-up aid: on kernel oops/panic, dump the display engine registers
-	  (OVL, RDMA, PQ chain, DSC, DSI, MUTEX, MIPI TX PLL, MMSYS crossbar,
-	  RSZ0) as text into the "oops" partition (/dev/block/sdc81) using
-	  panic-safe polling bios, so the display state at the crash moment
-	  survives the reboot and can be read back with
-	  `dd if=/dev/block/sdc81 bs=64 skip=1`.
+	  xaga (Redmi Note 11T Pro / POCO X4 GT / Redmi K50i, MT6895) 6.12
+	  recovery bring-up helper. Gates the g_serial (ttyGS0 console) USB
+	  gadget on a "kmsg2usb" marker at the head of the oops partition:
+	  marker present -> keep the console up for log capture; absent ->
+	  usb_composite_unregister() the g_serial gadget so the UDC is freed
+	  for charging/other uses. /proc/kmsg2usb (write 1/0) toggles the
+	  marker and applies it live; reading returns '1'/'0' for the current
+	  gadget state.
 
 	  Only the xaga defconfig fragment enables this; leave it off for
 	  other devices.
+
 endmenu

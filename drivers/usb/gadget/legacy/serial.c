@@ -100,7 +100,7 @@ MODULE_PARM_DESC(n_ports, "number of ports to create, default=1");
 
 static bool enable = true;
 
-static int switch_gserial_enable(bool do_enable);
+int switch_gserial_enable(bool do_enable);
 
 static int enable_set(const char *s, const struct kernel_param *kp)
 {
@@ -271,7 +271,7 @@ static struct usb_composite_driver gserial_driver = {
 	.unbind		= gs_unbind,
 };
 
-static int switch_gserial_enable(bool do_enable)
+int switch_gserial_enable(bool do_enable)
 {
 	if (!serial_config_driver.label)
 		/* gserial_init() was not called, yet */
@@ -283,6 +283,10 @@ static int switch_gserial_enable(bool do_enable)
 	usb_composite_unregister(&gserial_driver);
 	return 0;
 }
+/* xaga (2026-08-15): export for the xaga-kmsg2usb driver so the g_serial
+ * gadget (ttyGS0 console) can be brought up/down based on the kmsg2usb
+ * marker in the oops partition. */
+EXPORT_SYMBOL_GPL(switch_gserial_enable);
 
 static int __init gserial_init(void)
 {

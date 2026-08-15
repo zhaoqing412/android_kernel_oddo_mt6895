@@ -184,18 +184,9 @@ static struct platform_device *of_platform_device_create_pdata(
 	of_msi_configure(&dev->dev, dev->dev.of_node);
 
 	if (of_device_add(dev) != 0) {
-		/* xaga probe: gce device_add failure (2026-08-12) */
-		if (np && of_node_name_eq(np, "gce"))
-			pr_info("xaga-probe: gce device_add FAILED %s\n",
-				np->full_name);
 		platform_device_put(dev);
 		goto err_clear_flag;
 	}
-	/* xaga probe: gce device_add OK (2026-08-12) */
-	if (np && of_node_name_eq(np, "gce"))
-		pr_info("xaga-probe: gce device_add OK %s bus=%s\n",
-			np->full_name, dev->dev.bus ?
-			dev->dev.bus->name : "NONE");
 
 	return dev;
 
@@ -387,17 +378,6 @@ static int of_platform_bus_create(struct device_node *bus,
 	}
 
 	dev = of_platform_device_create_pdata(bus, bus_id, platform_data, parent);
-	/* xaga probe: track node enumeration (debug 2026-08-12) */
-	if (!of_node_name_eq(bus, "soc") &&
-	    (of_node_name_eq(bus, "dispsys_config") ||
-	     of_node_name_eq(bus, "dsi") ||
-	     of_node_name_eq(bus, "disp_ovl") ||
-	     of_node_name_eq(bus, "disp_rdma") ||
-	     of_node_name_eq(bus, "gce")))
-		pr_info("xaga-probe: of_platform %s dev=%s avail=%d comp=%s\n",
-			bus->full_name, dev ? "OK" : "NULL",
-			of_device_is_available(bus),
-			of_node_name_eq(bus, "dsi") ? "dsi" : "disp");
 	if (!dev || !of_match_node(matches, bus))
 		return 0;
 
